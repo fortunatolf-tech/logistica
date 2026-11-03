@@ -1,0 +1,22 @@
+{
+  "name": "@rotaviva/api-gateway",
+  "version": "0.1.0",
+  "description": "Borda da plataforma: OAuth2/OIDC, RBAC, MFA, rate limiting e proxy",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test \"dist/test/*.test.js\"",
+    "start": "node dist/src/server.js",
+    "dev": "tsc -p tsconfig.json && node dist/src/server.js"
+  },
+  "dependencies": {
+    "fastify": "^5.2.0",
+    "jose": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

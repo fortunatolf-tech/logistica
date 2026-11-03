@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@rotaviva/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@rotaviva/offline-core": ["../../packages/offline-core/src/index.ts"],
+      "@rotaviva/ui-components": ["../../packages/ui-components/src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "../../packages/shared-types/src", "../../packages/offline-core/src", "../../packages/ui-components/src"]
+}

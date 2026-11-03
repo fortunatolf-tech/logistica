@@ -1,0 +1,297 @@
+openapi: 3.1.0
+info:
+  title: RotaViva API
+  version: 0.1.0
+  description: |
+    Contratos de API da plataforma RotaViva. Espelha `packages/shared-types`.
+    Autenticação: OAuth 2.0 + OIDC (gateway), scopes por perfil
+    (`admin`, `gestor`, `entregador`, `integracao`).
+servers:
+  - url: http://localhost:8000
+    description: API Gateway (desenvolvimento)
+
+security:
+  - oauth2: []
+
+paths:
+  /v1/locations/normalize:
+    post:
+      summary: Normaliza uma localização de qualquer formato suportado
+      description: |
+        Aceita exatamente um dos quatro formatos (EXIF de foto, GPS nativo,
+        Plus Code completo ou curto, endereço) e retorna o registro canônico
+        georreferenciado, validado e auditado.
+      security:
+        - oauth2: [entregador, gestor, integracao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NormalizeRequest"
+      responses:
+        "201":
+          description: Registro canônico normalizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanonicalLocation"
+        "400":
+          description: Payload inválido ou incompleto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Coordenada inválida, fora da área de operação ou precisão insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/routes/optimize:
+    post:
+      summary: Otimiza a sequência de entregas de uma rota
+      description: |
+        Resolve VRP com janelas de tempo, perfil de veículo e restrições
+        urbanas. Entregas inviáveis são rejeitadas com justificativa
+        estruturada em `rejeitadas`.
+      security:
+        - oauth2: [gestor, integracao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptimizeRequest"
+      responses:
+        "200":
+          description: Rota otimizada com métricas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizeResponse"
+        "422":
+          description: Veículo incompatível ou payload inválido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/deliveries:
+    post:
+      summary: Cria uma entrega (delivery-service — incremento futuro)
+      security:
+        - oauth2: [gestor, integracao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [localizacao]
+              properties:
+                localizacao:
+                  $ref: "#/components/schemas/CanonicalLocation"
+                janela_inicio: { type: string, format: date-time }
+                janela_fim: { type: string, format: date-time }
+                prioridade: { type: integer, default: 0 }
+                idempotency_key: { type: string }
+      responses:
+        "201":
+          description: Entrega criada
+
+  /v1/deliveries/{id}/tracking:
+    get:
+      summary: Consulta o rastreamento de uma entrega (delivery-service — incremento futuro)
+      security:
+        - oauth2: [entregador, gestor, integracao]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Status e última posição conhecida
+
+  /v1/webhooks:
+    post:
+      summary: Registra webhook assinado (HMAC-SHA256) — incremento futuro
+      security:
+        - oauth2: [gestor]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, eventos]
+              properties:
+                url: { type: string, format: uri }
+                eventos:
+                  type: array
+                  items: { type: string }
+      responses:
+        "201":
+          description: Webhook registrado (segredo HMAC retornado uma única vez)
+
+  /v1/lgpd/requests:
+    post:
+      summary: Abre solicitação de titular (acesso, exportação, eliminação) — auditada
+      security:
+        - oauth2: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [titular_id, tipo]
+              properties:
+                titular_id: { type: string }
+                tipo:
+                  type: string
+                  enum: [acesso, exportacao, eliminacao]
+      responses:
+        "202":
+          description: Solicitação recebida e em processamento
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.rotaviva.example/realms/rotaviva/protocol/openid-connect/auth
+          tokenUrl: https://auth.rotaviva.example/realms/rotaviva/protocol/openid-connect/token
+          scopes:
+            admin: Administração e DPO (MFA obrigatória)
+            gestor: Gestão de rotas e frota (MFA obrigatória)
+            entregador: Operação de campo via PWA
+            integracao: Conectores e webhooks
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: object
+          properties:
+            motivo: { type: string }
+            detalhe: { type: string }
+
+    NormalizeRequest:
+      type: object
+      required: [fonte]
+      properties:
+        fonte:
+          type: string
+          enum: [exif, gps, plus_code, endereco]
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        precisao_m: { type: number }
+        foto_base64: { type: string, description: "Foto JPEG/HEIC em base64 (fonte=exif)" }
+        plus_code: { type: string, example: "588MC9X8+QM" }
+        referencia_lat: { type: number, description: "Obrigatória para Plus Code curto" }
+        referencia_lng: { type: number, description: "Obrigatória para Plus Code curto" }
+        endereco: { type: string, example: "Praça da Sé, São Paulo" }
+        tenant_id: { type: string }
+        operador: { type: string }
+
+    CanonicalLocation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lat: { type: number }
+        lng: { type: number }
+        precisao_m: { type: number }
+        fonte:
+          type: string
+          enum: [exif, gps, plus_code, endereco]
+        timestamp: { type: string, format: date-time }
+        plus_code_equivalente: { type: string }
+        validado: { type: boolean }
+        auditoria:
+          type: array
+          items:
+            type: object
+            properties:
+              quem: { type: string }
+              quando: { type: string, format: date-time }
+              acao: { type: string }
+              origem: { type: string }
+
+    OptimizeRequest:
+      type: object
+      required: [tenant_id, veiculo, entregas]
+      properties:
+        tenant_id: { type: string }
+        veiculo:
+          type: object
+          required: [tipo]
+          properties:
+            tipo:
+              type: string
+              enum: [moto, carro, van, caminhao]
+            capacidade: { type: number }
+        entregas:
+          type: array
+          items:
+            type: object
+            required: [id, lat, lng]
+            properties:
+              id: { type: string }
+              lat: { type: number }
+              lng: { type: number }
+              janela_inicio: { type: string, format: date-time }
+              janela_fim: { type: string, format: date-time }
+              prioridade: { type: integer, default: 0 }
+              servico_min: { type: number, default: 5 }
+        restricoes:
+          type: object
+          properties:
+            areas_restritas:
+              type: array
+              items: { type: string }
+            horario_operacao: { type: string }
+        origem:
+          type: object
+          properties:
+            lat: { type: number }
+            lng: { type: number }
+        inicio: { type: string, format: date-time }
+
+    OptimizeResponse:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        paradas:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              sequencia: { type: integer }
+              lat: { type: number }
+              lng: { type: number }
+              eta: { type: string, format: date-time }
+              distancia_desde_anterior_km: { type: number }
+              janela_respeitada: { type: boolean }
+        metricas:
+          type: object
+          properties:
+            tempo_total_estimado_min: { type: number }
+            distancia_total_km: { type: number }
+            combustivel_estimado_l: { type: number }
+            aderencia_janelas_pct: { type: number }
+        rejeitadas:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              motivo:
+                type: string
+                enum: [janela_impossivel, area_restrita, veiculo_incompativel, coordenada_invalida]
+              detalhe: { type: string }

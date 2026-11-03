@@ -1,0 +1,15 @@
+{
+  "name": "rotaviva",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared-types": "npm run build -w @rotaviva/shared-types",
+    "build:offline-core": "npm run build -w @rotaviva/offline-core",
+    "test:offline-core": "npm test -w @rotaviva/offline-core",
+    "build:web-pwa": "npm run build -w @rotaviva/web-pwa"
+  }
+}

@@ -1,0 +1,103 @@
+name: rotaviva
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rotaviva}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trocar-em-producao}
+      POSTGRES_DB: ${POSTGRES_DB:-rotaviva}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rotaviva}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-rotaviva}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-trocar-em-producao}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-rotaviva}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-trocar-em-producao}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  geo-normalizer:
+    build:
+      context: ./services/geo-normalizer
+      dockerfile: ../../infra/docker/geo-normalizer.Dockerfile
+    environment:
+      MAP_PROVIDER: ${MAP_PROVIDER:-nominatim}
+      NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      OPERATION_BBOX: ${OPERATION_BBOX:--73.99,-33.75,-28.84,5.27}
+      PRECISION_MIN_M: ${PRECISION_MIN_M:-100}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rotaviva}:${POSTGRES_PASSWORD:-trocar-em-producao}@postgres:5432/${POSTGRES_DB:-rotaviva}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  route-optimizer:
+    build:
+      context: ./services/route-optimizer
+      dockerfile: ../../infra/docker/route-optimizer.Dockerfile
+    environment:
+      REOPT_THRESHOLD_MIN: ${REOPT_THRESHOLD_MIN:-5}
+      MATRIX_CACHE_TTL_S: ${MATRIX_CACHE_TTL_S:-120}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8002:8002"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: ./apps/api-gateway
+      dockerfile: ../../infra/docker/api-gateway.Dockerfile
+    environment:
+      AUTH_DEV_SECRET: ${AUTH_DEV_SECRET:-dev-secret-inseguro-trocar}
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:-}
+      AUTH_ISSUER: ${AUTH_ISSUER:-}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:-}
+      GEO_NORMALIZER_URL: http://geo-normalizer:8001
+      ROUTE_OPTIMIZER_URL: http://route-optimizer:8002
+    ports:
+      - "8000:8000"
+    depends_on:
+      - geo-normalizer
+      - route-optimizer
+
+volumes:
+  pgdata:
+  miniodata:

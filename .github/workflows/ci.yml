@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python-services:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependências
+        run: |
+          pip install -r services/geo-normalizer/requirements.txt
+          pip install -r services/route-optimizer/requirements.txt
+      - name: Testes geo-normalizer
+        run: cd services/geo-normalizer && python -m unittest discover -s tests -v
+      - name: Testes route-optimizer
+        run: cd services/route-optimizer && python -m unittest discover -s tests -v
+
+  shared-types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build shared-types
+        run: |
+          cd packages/shared-types
+          npm install
+          npm run build
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Instalar workspaces
+        run: npm install --no-audit --no-fund
+      - name: Testes do núcleo offline (fila, backoff, conflitos, sync)
+        run: npm test -w @rotaviva/offline-core
+      - name: Testes do API Gateway (auth, RBAC, MFA, rate limit)
+        run: npm test -w @rotaviva/api-gateway
+      - name: Typecheck estrito do PWA e pacotes
+        run: npm run typecheck -w @rotaviva/web-pwa
+      - name: Build de produção do PWA
+        run: npm run build -w @rotaviva/web-pwa
